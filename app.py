@@ -218,10 +218,8 @@ function measureScreen(){
   screenPeak=Math.max(screenPeak,level);
   const f=document.getElementById('fill');
   const db=toDb(level), num=document.getElementById('liveDb');
-  if(window.currentGamePhase==='play'){
-    if(f)f.style.height=level+'%';
-    if(num){num.textContent=(db<=-60?'-60':db.toFixed(1));num.style.color=dbColor(db);}
-  }
+  if(f)f.style.height=level+'%';
+  if(num){num.textContent=(db<=-60?'-60':db.toFixed(1));num.style.color=dbColor(db);}
   fetch('/api/level',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({level:level}),cache:'no-store'}).catch(()=>{});
   requestAnimationFrame(measureScreen);
 }
@@ -232,7 +230,7 @@ function dbColor(db){if(db>=-15)return '#ff5b55';if(db>=-27)return '#ffd640';if(
 function draw(s){window.currentGamePhase=s.phase;
  let p=s.participants[s.current], live=Math.max(0,Math.min(100,Number(s.live)||0)), db=toDb(live), peakLevel=Math.max(0,Math.min(100,Number(s.peak)||0));
  if(s.phase==='ready'||s.phase==='prep') shownPeak=0; else shownPeak=Math.max(shownPeak,peakLevel);
- if(!screenAnalyser) fill.style.height=live+'%'; peakline.style.bottom=Math.max(0,Math.min(100,shownPeak))+'%';
+ if(!screenAnalyser){fill.style.height=live+'%';} peakline.style.bottom=Math.max(0,Math.min(100,shownPeak))+'%';
  let status='',timer='';
  if(!s.participants.length){status='ОЖИДАНИЕ';p=null}
  else if(s.phase==='prep'){status='ПРИГОТОВЬТЕСЬ';timer='<span class="count">'+Math.max(1,Math.ceil(s.remaining))+'</span>'}
