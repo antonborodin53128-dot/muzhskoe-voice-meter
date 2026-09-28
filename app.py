@@ -52,6 +52,19 @@ button.secondary{margin-top:10px;background:#18231d;color:#d6e0da;border:1px sol
 <div class="small">Выбранное устройство запоминается в этом браузере. При смене входа браузер переподключится к выбранному устройству. Для работы микрофона страница должна быть открыта по HTTPS или на localhost.</div>
 </div></div>
 <script>
+let lastLevelSend = 0;
+function publishVoiceLevel(v){
+    const now = Date.now();
+    if (now - lastLevelSend < 70) return;
+    lastLevelSend = now;
+    fetch('/api/level', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({level:v}),
+        cache: 'no-store'
+    }).catch(()=>{});
+}
+
 let ctx=null, analyser=null, stream=null, raf=null, peak=0;
 const devices=document.getElementById('devices'), status=document.getElementById('status'),
 fill=document.getElementById('fill'), level=document.getElementById('level'), peakEl=document.getElementById('peak');
