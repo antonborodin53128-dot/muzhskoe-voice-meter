@@ -158,6 +158,10 @@ def game_data():
 CONTROL_HTML = """<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
 <title>Voice Meter — ведущий</title><style>
 body{margin:0;background:#020b07;color:#f4f5ef;font-family:Arial,sans-serif}.wrap{max-width:950px;margin:auto;padding:25px}.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}.brand{font-size:25px;font-weight:900}.m{border:2px solid #20ee78;padding:7px 10px}.w{color:#747d78}.a{color:#20ee78}.p{border:1px solid #174b30;background:#081810;border-radius:22px;padding:22px;margin:16px 0}.label{color:#84968c;font-size:13px;font-weight:900;letter-spacing:2px}button,a{border:0;border-radius:14px;padding:15px 22px;font-size:16px;font-weight:900;text-decoration:none;display:inline-block;cursor:pointer}.g{background:#20eb72;color:#001b0d}.d{background:#18231d;color:#d5ded9}.r{background:#3b171d;color:#ff9da9}input{background:#07110c;border:1px solid #22543a;border-radius:14px;color:#fff;padding:14px;font-size:18px}.row{display:flex;gap:12px;align-items:end;flex-wrap:wrap}.name{font-size:38px;font-weight:900}.big{font-size:75px;color:#20ee78;font-weight:900}.res{display:flex;justify-content:space-between;border-bottom:1px solid #12301f;padding:11px 2px}.res b{color:#20ee78}.sep{margin-top:28px;padding-top:20px;border-top:1px solid #174b30}
+
+.retryActions{margin-top:28px;padding-top:18px;border-top:1px solid #294238;display:flex;flex-direction:column;gap:12px}
+.nextBtn{width:100%;background:#20ee78;color:#001b0d;border:0;border-radius:14px;padding:16px 22px;font-size:16px;font-weight:900;cursor:pointer}
+.retryBtn{width:100%;background:#18231d;color:#aab6b0;border:1px solid #405047;border-radius:14px;padding:13px 22px;font-size:14px;font-weight:800;cursor:pointer}
 </style></head><body><div class="wrap"><div class="top"><div class="brand"><span class="m">МУЖСКОЕ</span> <span class="a">/</span> <span class="w">ЖЕНСКОЕ</span></div><b class="a">VOICE METER</b></div>
 <div class="p"><div class="label">СТРАНИЦА ВЕДУЩЕГО</div><div class="row" style="margin-top:12px"><div><div class="label">КОЛИЧЕСТВО УЧАСТНИКОВ</div><input id="n" type="number" min="1" max="10" value="4"></div><button class="g" onclick="init()">НАЧАТЬ КОНКУРС</button><button class="r" onclick="post('/api/reset')">СБРОСИТЬ</button><a class="d" href="/screen" target="_blank">ГОСТЕВОЙ ЭКРАН</a></div></div><div class="p" id="game">ОЖИДАНИЕ</div></div>
 <script>
@@ -174,7 +178,7 @@ async function activateSavedAudio(){
 }
 
 async function post(u,b={}){return fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(r=>r.json())}async function init(){await activateSavedAudio();post('/api/init',{count:+n.value})}
-function draw(s){let e=document.getElementById('game');if(!s.participants.length){e.innerHTML='ОЖИДАНИЕ';return}let p=s.participants[s.current],t=s.phase==='prep'?'ОТСЧЁТ: '+Math.max(1,Math.ceil(s.remaining)):s.phase==='play'?'ЗАМЕР · '+Math.ceil(s.remaining)+' СЕК.':s.phase==='timeup'?'ВРЕМЯ!':s.phase==='finished'?'КОНКУРС ЗАВЕРШЁН':'ГОТОВ';let b=s.phase==='ready'?'<button class="g" onclick="post(\\'/api/start\\')">СТАРТ</button>':s.phase==='timeup'?'<button class="g" onclick="post(\\'/api/retry\\')">НАЧАТЬ ЗАНОВО</button> <button class="d" onclick="post(\\'/api/next\\')">СЛЕДУЮЩИЙ УЧАСТНИК →</button>':'';let rs=s.participants.filter(x=>x.done).map(x=>`<div class="res"><span>${x.name}</span><b>${x.score}</b></div>`).join('');e.innerHTML=`<div class="label">СЕЙЧАС ИГРАЕТ</div><div class="name">${p?p.name:''}</div><h2>${t}</h2><div class="big">${s.peak}</div>${b}<div class="sep"><div class="label">РЕЗУЛЬТАТЫ</div>${rs}</div>`}
+function draw(s){let e=document.getElementById('game');if(!s.participants.length){e.innerHTML='ОЖИДАНИЕ';return}let p=s.participants[s.current],t=s.phase==='prep'?'ОТСЧЁТ: '+Math.max(1,Math.ceil(s.remaining)):s.phase==='play'?'ЗАМЕР · '+Math.ceil(s.remaining)+' СЕК.':s.phase==='timeup'?'ВРЕМЯ!':s.phase==='finished'?'КОНКУРС ЗАВЕРШЁН':'ГОТОВ';let b=s.phase==='ready'?'<button class="g" onclick="post(\\'/api/start\\')">СТАРТ</button>':s.phase==='timeup'?'<div class="retryActions"><button class="nextBtn" onclick="post(\\'/api/next\\')">СЛЕДУЮЩИЙ УЧАСТНИК →</button><button class="retryBtn" onclick="post(\\'/api/retry\\')">НАЧАТЬ ЗАНОВО</button></div>':'';let rs=s.participants.filter(x=>x.done).map(x=>`<div class="res"><span>${x.name}</span><b>${x.score}</b></div>`).join('');e.innerHTML=`<div class="label">СЕЙЧАС ИГРАЕТ</div><div class="name">${p?p.name:''}</div><h2>${t}</h2><div class="big">${s.peak}</div>${b}<div class="sep"><div class="label">РЕЗУЛЬТАТЫ</div>${rs}</div>`}
 async function poll(){try{draw(await fetch('/api/state?_='+Date.now(),{cache:'no-store',headers:{'Cache-Control':'no-cache'}}).then(r=>r.json()))}catch(e){}setTimeout(poll,150)}poll()
 </script></body></html>"""
 
@@ -185,6 +189,10 @@ SCREEN_HTML = """<!doctype html><html lang="ru"><head><meta charset="utf-8"><met
 .meterbox{display:flex;align-items:center;justify-content:center;gap:18px}.scale{height:590px;display:flex;flex-direction:column;justify-content:space-between;text-align:right;color:#a9b8b0;font-size:17px;font-weight:800}.meter{position:relative;width:125px;height:590px;border:2px solid #27513c;border-radius:26px;overflow:hidden;background:#06100b;box-shadow:0 0 40px rgba(32,238,120,.08)}
 .zones{position:absolute;inset:0;background:linear-gradient(to top,#19df68 0%,#8ee63e 55%,#ffd640 75%,#ff5b55 100%);opacity:.18}.fill{position:absolute;left:0;right:0;bottom:0;height:0;background:linear-gradient(to top,#19df68 0%,#8ee63e 55%,#ffd640 75%,#ff5b55 100%);transition:height .06s linear;box-shadow:0 0 24px rgba(32,238,120,.35)}
 .peakline{position:absolute;left:0;right:0;height:4px;background:white;bottom:0;transition:bottom .08s}.results{min-height:74px;border-top:1px solid #174b30;padding-top:13px;display:flex;gap:14px;overflow:hidden}.res{min-width:180px;border:1px solid #174b30;border-radius:12px;padding:10px 14px;display:flex;justify-content:space-between}.res b{color:#20ee78}
+
+.count{display:block!important;font-size:260px!important;font-weight:900;line-height:1;color:#fff!important;margin:28px 0}
+.finalResult{font-size:190px;font-weight:900;line-height:1;margin:30px 0 12px}
+.finalResult .unit{font-size:44px}
 </style></head><body><div class="wrap"><div class="top"><div class="brand"><span class="m">МУЖСКОЕ</span> <span class="a">/</span> <span class="w">ЖЕНСКОЕ</span></div><b class="a">VOICE METER</b></div>
 <button id="audioStart" onclick="startScreenAudio()" style="position:absolute;top:90px;right:36px;background:#20ee78;color:#001b0d;border:0;border-radius:12px;padding:12px 18px;font-weight:900;cursor:pointer">ПОДКЛЮЧИТЬ VOICE METER</button><div class="main"><div class="info" id="info"></div><div class="meterbox"><div class="scale"><span>0</span><span>-10</span><span>-20</span><span>-30</span><span>-40</span><span>-50</span><span>-60</span></div><div class="meter"><div class="zones"></div><div class="fill" id="fill"></div><div class="peakline" id="peakline"></div></div></div></div><div class="results" id="results"></div></div>
 <script>
@@ -218,8 +226,10 @@ function measureScreen(){
   screenPeak=Math.max(screenPeak,level);
   const f=document.getElementById('fill');
   const db=toDb(level), num=document.getElementById('liveDb');
-  if(f)f.style.height=level+'%';
-  if(num){num.textContent=(db<=-60?'-60':db.toFixed(1));num.style.color=dbColor(db);}
+  if(window.currentGamePhase!=='timeup' && window.currentGamePhase!=='finished'){
+    if(f)f.style.height=level+'%';
+    if(num){num.textContent=(db<=-60?'-60':db.toFixed(1));num.style.color=dbColor(db);}
+  }
   fetch('/api/level',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({level:level}),cache:'no-store'}).catch(()=>{});
   requestAnimationFrame(measureScreen);
 }
@@ -235,11 +245,15 @@ function draw(s){window.currentGamePhase=s.phase;
  if(!s.participants.length){status='ОЖИДАНИЕ';p=null}
  else if(s.phase==='prep'){status='ПРИГОТОВЬТЕСЬ';timer='<span class="count">'+Math.max(1,Math.ceil(s.remaining))+'</span>'}
  else if(s.phase==='play'){status='КРИЧИ!';timer=Math.ceil(s.remaining)+' СЕК.'}
- else if(s.phase==='timeup'){status='РЕЗУЛЬТАТ';live=Math.max(0,Math.min(100,Number(p.score)||0));db=toDb(live)}
+ else if(s.phase==='timeup'){status='РЕЗУЛЬТАТ';live=Math.max(0,Math.min(100,Number(p.score)||0));db=toDb(live);timer=''}
  else if(s.phase==='finished'){status='КОНКУРС ЗАВЕРШЁН';p=null}
  else status='ПРИГОТОВЬТЕСЬ';
  let c=dbColor(db), dbText=(db<=-60?'-60':db.toFixed(1));
- info.innerHTML=`<div class="name">${p?p.name:''}</div><div class="status">${status}</div><div class="db"><span id="liveDb" style="color:${c}">${dbText}</span><span class="unit" style="color:${c}"> dB</span></div><div class="timer">${timer}</div><div class="hint">Чем громче звук, тем выше показатель</div>`;
+ if(s.phase==='timeup'){
+   info.innerHTML=`<div class="name">${p?p.name:''}</div><div class="status">МАКСИМАЛЬНЫЙ РЕЗУЛЬТАТ</div><div class="finalResult" style="color:${c}">${dbText}<span class="unit"> dB</span></div>`;
+ }else{
+   info.innerHTML=`<div class="name">${p?p.name:''}</div><div class="status">${status}</div><div class="db"><span id="liveDb" style="color:${c}">${dbText}</span><span class="unit" style="color:${c}"> dB</span></div><div class="timer">${timer}</div><div class="hint">Чем громче звук, тем выше показатель</div>`;
+ }
  results.innerHTML=s.participants.filter(x=>x.done).map(x=>`<div class="res"><span>${x.name}</span><b>${toDb(Number(x.score)||0).toFixed(1)} dB</b></div>`).join('');
 }
 async function poll(){try{draw(await fetch('/api/state?_='+Date.now(),{cache:'no-store',headers:{'Cache-Control':'no-cache'}}).then(r=>r.json()))}catch(e){}setTimeout(poll,100)}poll()
