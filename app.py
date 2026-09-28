@@ -52,16 +52,23 @@ button.secondary{margin-top:10px;background:#18231d;color:#d6e0da;border:1px sol
 <div class="small">Выбранное устройство запоминается в этом браузере. При смене входа браузер переподключится к выбранному устройству. Для работы микрофона страница должна быть открыта по HTTPS или на localhost.</div>
 </div></div>
 <script>
+const vmChannel = new BroadcastChannel('voice-meter-live');
+
 let lastLevelSend = 0;
 function publishVoiceLevel(v){
+    // Direct real-time mirror to /screen in the same browser.
+    vmChannel.postMessage({type:'level', level:v, ts:Date.now()});
+
+    // Server copy is still used for scoring/results.
     const now = Date.now();
     if (now - lastLevelSend < 70) return;
     lastLevelSend = now;
     fetch('/api/level', {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({level:v}),
-        cache: 'no-store'
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({level:v}),
+        cache:'no-store',
+        keepalive:true
     }).catch(()=>{});
 }
 
@@ -176,11 +183,30 @@ SCREEN_HTML = """<!doctype html><html lang="ru"><head><meta charset="utf-8"><met
 </style></head><body><div class="wrap"><div class="top"><div class="brand"><span class="m">МУЖСКОЕ</span> <span class="a">/</span> <span class="w">ЖЕНСКОЕ</span></div><b class="a">VOICE METER</b></div>
 <div class="main"><div class="info" id="info"></div><div class="meterbox"><div class="scale"><span>0</span><span>-10</span><span>-20</span><span>-30</span><span>-40</span><span>-50</span><span>-60</span></div><div class="meter"><div class="zones"></div><div class="fill" id="fill"></div><div class="peakline" id="peakline"></div></div></div></div><div class="results" id="results"></div></div>
 <script>
+const vmChannel = new BroadcastChannel('voice-meter-live');
+let directLevel = null;
+let directTs = 0;
+vmChannel.onmessage = (e)=>{
+  if(e.data && e.data.type==='level'){
+    directLevel = Math.max(0,Math.min(100,Number(e.data.level)||0));
+    directTs = Date.now();
+    paintLiveMeter(directLevel);
+  }
+};
+function paintLiveMeter(level){
+  const db=toDb(level), c=dbColor(db);
+  const f=document.getElementById('fill');
+  if(f) f.style.height=level+'%';
+  const num=document.getElementById('liveDb');
+  if(num){num.textContent=(db<=-60?'-60':db.toFixed(1));num.style.color=c;}
+}
+
 let shownPeak=0;
 function toDb(level){return Math.max(-60,Math.min(0,-60+(Math.max(0,Math.min(100,level))/100)*60))}
 function dbColor(db){if(db>=-15)return '#ff5b55';if(db>=-27)return '#ffd640';if(db>=-40)return '#9be63e';return '#20ee78'}
 function draw(s){
  let p=s.participants[s.current], live=Math.max(0,Math.min(100,Number(s.live)||0)), db=toDb(live), peakLevel=Math.max(0,Math.min(100,Number(s.peak)||0));
+ if(directLevel!==null && Date.now()-directTs<1500){live=directLevel;db=toDb(live);}
  if(s.phase==='ready'||s.phase==='prep') shownPeak=0; else shownPeak=Math.max(shownPeak,peakLevel);
  fill.style.height=live+'%'; peakline.style.bottom=Math.max(0,Math.min(100,shownPeak))+'%';
  let status='',timer='';
@@ -191,7 +217,7 @@ function draw(s){
  else if(s.phase==='finished'){status='КОНКУРС ЗАВЕРШЁН';p=null}
  else status='ПРИГОТОВЬТЕСЬ';
  let c=dbColor(db), dbText=(db<=-60?'-60':db.toFixed(1));
- info.innerHTML=`<div class="name">${p?p.name:''}</div><div class="status">${status}</div><div class="db" style="color:${c}">${dbText}<span class="unit">dB</span></div><div class="timer">${timer}</div><div class="hint">Чем громче звук, тем выше показатель</div>`;
+ info.innerHTML=`<div class="name">${p?p.name:''}</div><div class="status">${status}</div><div class="db"><span id="liveDb" style="color:${c}">${dbText}</span><span class="unit" style="color:${c}">dB</span></div><div class="timer">${timer}</div><div class="hint">Чем громче звук, тем выше показатель</div>`;
  results.innerHTML=s.participants.filter(x=>x.done).map(x=>`<div class="res"><span>${x.name}</span><b>${toDb(Number(x.score)||0).toFixed(1)} dB</b></div>`).join('');
 }
 async function poll(){try{draw(await fetch('/api/state?_='+Date.now(),{cache:'no-store',headers:{'Cache-Control':'no-cache'}}).then(r=>r.json()))}catch(e){}setTimeout(poll,100)}poll()
