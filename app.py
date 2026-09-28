@@ -135,8 +135,8 @@ if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
 
 lock = threading.Lock()
 game = {"participants":[],"current":-1,"phase":"idle","started":None,"peak":0.0,"live":0.0}
-PREP=3
-ROUND=5
+PREP=5
+ROUND=10
 
 def update_game():
     if game["phase"]=="prep" and time.time()-game["started"]>=PREP:
@@ -174,7 +174,7 @@ async function activateSavedAudio(){
 }
 
 async function post(u,b={}){return fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(r=>r.json())}async function init(){await activateSavedAudio();post('/api/init',{count:+n.value})}
-function draw(s){let e=document.getElementById('game');if(!s.participants.length){e.innerHTML='ОЖИДАНИЕ';return}let p=s.participants[s.current],t=s.phase==='prep'?'ОТСЧЁТ: '+Math.max(1,Math.ceil(s.remaining)):s.phase==='play'?'ЗАМЕР · '+Math.ceil(s.remaining)+' СЕК.':s.phase==='timeup'?'ВРЕМЯ!':s.phase==='finished'?'КОНКУРС ЗАВЕРШЁН':'ГОТОВ';let b=s.phase==='ready'?'<button class="g" onclick="post(\\'/api/start\\')">СТАРТ</button>':s.phase==='timeup'?'<button class="d" onclick="post(\\'/api/next\\')">СЛЕДУЮЩИЙ УЧАСТНИК →</button>':'';let rs=s.participants.filter(x=>x.done).map(x=>`<div class="res"><span>${x.name}</span><b>${x.score}</b></div>`).join('');e.innerHTML=`<div class="label">СЕЙЧАС ИГРАЕТ</div><div class="name">${p?p.name:''}</div><h2>${t}</h2><div class="big">${s.peak}</div>${b}<div class="sep"><div class="label">РЕЗУЛЬТАТЫ</div>${rs}</div>`}
+function draw(s){let e=document.getElementById('game');if(!s.participants.length){e.innerHTML='ОЖИДАНИЕ';return}let p=s.participants[s.current],t=s.phase==='prep'?'ОТСЧЁТ: '+Math.max(1,Math.ceil(s.remaining)):s.phase==='play'?'ЗАМЕР · '+Math.ceil(s.remaining)+' СЕК.':s.phase==='timeup'?'ВРЕМЯ!':s.phase==='finished'?'КОНКУРС ЗАВЕРШЁН':'ГОТОВ';let b=s.phase==='ready'?'<button class="g" onclick="post(\\'/api/start\\')">СТАРТ</button>':s.phase==='timeup'?'<button class="g" onclick="post(\\'/api/retry\\')">НАЧАТЬ ЗАНОВО</button> <button class="d" onclick="post(\\'/api/next\\')">СЛЕДУЮЩИЙ УЧАСТНИК →</button>':'';let rs=s.participants.filter(x=>x.done).map(x=>`<div class="res"><span>${x.name}</span><b>${x.score}</b></div>`).join('');e.innerHTML=`<div class="label">СЕЙЧАС ИГРАЕТ</div><div class="name">${p?p.name:''}</div><h2>${t}</h2><div class="big">${s.peak}</div>${b}<div class="sep"><div class="label">РЕЗУЛЬТАТЫ</div>${rs}</div>`}
 async function poll(){try{draw(await fetch('/api/state?_='+Date.now(),{cache:'no-store',headers:{'Cache-Control':'no-cache'}}).then(r=>r.json()))}catch(e){}setTimeout(poll,150)}poll()
 </script></body></html>"""
 
@@ -217,9 +217,11 @@ function measureScreen(){
   const level=Math.max(0,Math.min(100,Math.round((20*Math.log10(Math.max(rms,.00001))+60)*1.67)));
   screenPeak=Math.max(screenPeak,level);
   const f=document.getElementById('fill');
-  if(f)f.style.height=level+'%';
   const db=toDb(level), num=document.getElementById('liveDb');
-  if(num){num.textContent=(db<=-60?'-60':db.toFixed(1));num.style.color=dbColor(db);}
+  if(window.currentGamePhase==='play'){
+    if(f)f.style.height=level+'%';
+    if(num){num.textContent=(db<=-60?'-60':db.toFixed(1));num.style.color=dbColor(db);}
+  }
   fetch('/api/level',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({level:level}),cache:'no-store'}).catch(()=>{});
   requestAnimationFrame(measureScreen);
 }
@@ -227,15 +229,15 @@ function measureScreen(){
 let shownPeak=0;
 function toDb(level){return Math.max(-60,Math.min(0,-60+(Math.max(0,Math.min(100,level))/100)*60))}
 function dbColor(db){if(db>=-15)return '#ff5b55';if(db>=-27)return '#ffd640';if(db>=-40)return '#9be63e';return '#20ee78'}
-function draw(s){
+function draw(s){window.currentGamePhase=s.phase;
  let p=s.participants[s.current], live=Math.max(0,Math.min(100,Number(s.live)||0)), db=toDb(live), peakLevel=Math.max(0,Math.min(100,Number(s.peak)||0));
  if(s.phase==='ready'||s.phase==='prep') shownPeak=0; else shownPeak=Math.max(shownPeak,peakLevel);
  if(!screenAnalyser) fill.style.height=live+'%'; peakline.style.bottom=Math.max(0,Math.min(100,shownPeak))+'%';
  let status='',timer='';
  if(!s.participants.length){status='ОЖИДАНИЕ';p=null}
- else if(s.phase==='prep'){status='ПРИГОТОВЬТЕСЬ';timer=Math.max(1,Math.ceil(s.remaining))}
+ else if(s.phase==='prep'){status='ПРИГОТОВЬТЕСЬ';timer='<span class="count">'+Math.max(1,Math.ceil(s.remaining))+'</span>'}
  else if(s.phase==='play'){status='КРИЧИ!';timer=Math.ceil(s.remaining)+' СЕК.'}
- else if(s.phase==='timeup'){status='ВРЕМЯ!';live=Math.max(0,Math.min(100,Number(p.score)||0));db=toDb(live)}
+ else if(s.phase==='timeup'){status='РЕЗУЛЬТАТ';live=Math.max(0,Math.min(100,Number(p.score)||0));db=toDb(live)}
  else if(s.phase==='finished'){status='КОНКУРС ЗАВЕРШЁН';p=null}
  else status='ПРИГОТОВЬТЕСЬ';
  let c=dbColor(db), dbText=(db<=-60?'-60':db.toFixed(1));
@@ -273,6 +275,16 @@ def api_level():
         update_game();game["live"]=v
         if game["phase"]=="play":game["peak"]=max(game["peak"],v)
         return jsonify(ok=True)
+
+@app.post("/api/retry")
+def api_retry():
+    with lock:
+        i=game["current"]
+        if 0 <= i < len(game["participants"]):
+            game["participants"][i]["score"]=None
+            game["participants"][i]["done"]=False
+            game.update(phase="ready",started=None,peak=0.0,live=0.0)
+        return jsonify(game_data())
 
 @app.post("/api/next")
 def api_next():
