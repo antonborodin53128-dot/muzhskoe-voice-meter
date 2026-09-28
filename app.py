@@ -60,12 +60,12 @@ function publishVoiceLevel(v){
     fetch('/api/level', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({db:v}),
+        body: JSON.stringify({level:v}),
         cache: 'no-store'
     }).catch(()=>{});
 }
 
-let ctx=null, analyser=null, stream=null, raf=null, peak=-60;
+let ctx=null, analyser=null, stream=null, raf=null, peak=0;
 const devices=document.getElementById('devices'), status=document.getElementById('status'),
 fill=document.getElementById('fill'), level=document.getElementById('level'), peakEl=document.getElementById('peak');
 
@@ -101,7 +101,7 @@ async function connect(deviceId){
     const settings=track.getSettings();
     if(settings.deviceId){devices.value=settings.deviceId;localStorage.setItem('voiceMeterDevice',settings.deviceId);}
     status.textContent='Подключено: '+(track.label||'аудиовход');
-    peak=-60; draw();
+    peak=0; draw();
   }catch(e){
     status.textContent='Не удалось открыть микрофон: '+e.message;
     status.className='status warn';
@@ -114,10 +114,9 @@ function draw(){
   for(let i=0;i<a.length;i++){sum+=a[i]*a[i];max=Math.max(max,Math.abs(a[i]));}
   const rms=Math.sqrt(sum/a.length);
   // visual 0..100 scale, intentionally sensitive enough for speech/shouting
-  const db=Math.max(-60,Math.min(0,20*Math.log10(Math.max(rms,0.001))));
-  const val=Math.max(0,Math.min(100,((db+60)/60)*100));
-  peak=Math.max(peak,db);
-  fill.style.width=val+'%'; level.textContent=db.toFixed(1)+' dB'; peakEl.textContent=peak.toFixed(1)+' dB'; publishVoiceLevel(db);
+  const val=Math.max(0,Math.min(100,Math.round((20*Math.log10(Math.max(rms,0.00001))+60)*1.67)));
+  peak=Math.max(peak,val);
+  fill.style.width=val+'%'; level.textContent=val; peakEl.textContent=peak; publishVoiceLevel(val);
   raf=requestAnimationFrame(draw);
 }
 
@@ -135,13 +134,13 @@ if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
 
 
 lock = threading.Lock()
-game = {"participants":[],"current":-1,"phase":"idle","started":None,"peak":-60.0,"live":-60.0}
+game = {"participants":[],"current":-1,"phase":"idle","started":None,"peak":0.0,"live":0.0}
 PREP=3
 ROUND=5
 
 def update_game():
     if game["phase"]=="prep" and time.time()-game["started"]>=PREP:
-        game["phase"]="play"; game["started"]=time.time(); game["peak"]=-60.0
+        game["phase"]="play"; game["started"]=time.time(); game["peak"]=0.0
     elif game["phase"]=="play" and time.time()-game["started"]>=ROUND:
         i=game["current"]
         if 0<=i<len(game["participants"]):
@@ -162,33 +161,7 @@ body{margin:0;background:#020b07;color:#f4f5ef;font-family:Arial,sans-serif}.wra
 </style></head><body><div class="wrap"><div class="top"><div class="brand"><span class="m">МУЖСКОЕ</span> <span class="a">/</span> <span class="w">ЖЕНСКОЕ</span></div><b class="a">VOICE METER</b></div>
 <div class="p"><div class="label">СТРАНИЦА ВЕДУЩЕГО</div><div class="row" style="margin-top:12px"><div><div class="label">КОЛИЧЕСТВО УЧАСТНИКОВ</div><input id="n" type="number" min="1" max="10" value="4"></div><button class="g" onclick="init()">НАЧАТЬ КОНКУРС</button><button class="r" onclick="post('/api/reset')">СБРОСИТЬ</button><a class="d" href="/screen" target="_blank">ГОСТЕВОЙ ЭКРАН</a></div></div><div class="p" id="game">ОЖИДАНИЕ</div></div>
 <script>
-let hostStream=null,hostCtx=null,hostAnalyser=null,hostBuf=null,hostTimer=null;
-async function ensureHostAudio(){
-  try{
-    if(hostStream) return true;
-    const saved=localStorage.getItem('voiceMeterDevice');
-    hostStream=await navigator.mediaDevices.getUserMedia({audio:{
-      deviceId:saved?{exact:saved}:undefined,
-      echoCancellation:false,noiseSuppression:false,autoGainControl:false
-    }});
-    hostCtx=new (window.AudioContext||window.webkitAudioContext)();
-    if(hostCtx.state==='suspended') await hostCtx.resume();
-    hostAnalyser=hostCtx.createAnalyser();hostAnalyser.fftSize=2048;hostAnalyser.smoothingTimeConstant=.12;
-    hostCtx.createMediaStreamSource(hostStream).connect(hostAnalyser);
-    hostBuf=new Float32Array(hostAnalyser.fftSize);
-    hostTimer=setInterval(sendHostLevel,50);
-    return true;
-  }catch(e){return false}
-}
-function sendHostLevel(){
-  if(!hostAnalyser)return;
-  hostAnalyser.getFloatTimeDomainData(hostBuf);
-  let sum=0;for(let v of hostBuf)sum+=v*v;
-  const rms=Math.sqrt(sum/hostBuf.length);
-  const db=Math.max(-60,Math.min(0,20*Math.log10(Math.max(rms,.001))));
-  fetch('/api/level',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({db:db}),cache:'no-store'}).catch(()=>{});
-}
-async function post(u,b={}){return fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(r=>r.json())}async function init(){await ensureHostAudio();post('/api/init',{count:+n.value})}
+async function post(u,b={}){return fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(r=>r.json())}function init(){post('/api/init',{count:+n.value})}
 function draw(s){let e=document.getElementById('game');if(!s.participants.length){e.innerHTML='ОЖИДАНИЕ';return}let p=s.participants[s.current],t=s.phase==='prep'?'ОТСЧЁТ: '+Math.max(1,Math.ceil(s.remaining)):s.phase==='play'?'ЗАМЕР · '+Math.ceil(s.remaining)+' СЕК.':s.phase==='timeup'?'ВРЕМЯ!':s.phase==='finished'?'КОНКУРС ЗАВЕРШЁН':'ГОТОВ';let b=s.phase==='ready'?'<button class="g" onclick="post(\\'/api/start\\')">СТАРТ</button>':s.phase==='timeup'?'<button class="d" onclick="post(\\'/api/next\\')">СЛЕДУЮЩИЙ УЧАСТНИК →</button>':'';let rs=s.participants.filter(x=>x.done).map(x=>`<div class="res"><span>${x.name}</span><b>${x.score}</b></div>`).join('');e.innerHTML=`<div class="label">СЕЙЧАС ИГРАЕТ</div><div class="name">${p?p.name:''}</div><h2>${t}</h2><div class="big">${s.peak}</div>${b}<div class="sep"><div class="label">РЕЗУЛЬТАТЫ</div>${rs}</div>`}
 async function poll(){try{draw(await fetch('/api/state?_='+Date.now(),{cache:'no-store',headers:{'Cache-Control':'no-cache'}}).then(r=>r.json()))}catch(e){}setTimeout(poll,150)}poll()
 </script></body></html>"""
@@ -204,22 +177,22 @@ SCREEN_HTML = """<!doctype html><html lang="ru"><head><meta charset="utf-8"><met
 <div class="main"><div class="info" id="info"></div><div class="meterbox"><div class="scale"><span>0</span><span>-10</span><span>-20</span><span>-30</span><span>-40</span><span>-50</span><span>-60</span></div><div class="meter"><div class="zones"></div><div class="fill" id="fill"></div><div class="peakline" id="peakline"></div></div></div></div><div class="results" id="results"></div></div>
 <script>
 let shownPeak=0;
-function pct(db){return Math.max(0,Math.min(100,((db+60)/60)*100))}
+function toDb(level){return Math.max(-60,Math.min(0,-60+(Math.max(0,Math.min(100,level))/100)*60))}
 function dbColor(db){if(db>=-15)return '#ff5b55';if(db>=-27)return '#ffd640';if(db>=-40)return '#9be63e';return '#20ee78'}
 function draw(s){
- let p=s.participants[s.current], db=Math.max(-60,Math.min(0,Number(s.live ?? -60))), live=pct(db), peakDb=Math.max(-60,Math.min(0,Number(s.peak ?? -60)));
- if(s.phase==='ready'||s.phase==='prep') shownPeak=0; else shownPeak=Math.max(shownPeak,pct(peakDb));
+ let p=s.participants[s.current], live=Math.max(0,Math.min(100,Number(s.live)||0)), db=toDb(live), peakLevel=Math.max(0,Math.min(100,Number(s.peak)||0));
+ if(s.phase==='ready'||s.phase==='prep') shownPeak=0; else shownPeak=Math.max(shownPeak,peakLevel);
  fill.style.height=live+'%'; peakline.style.bottom=Math.max(0,Math.min(100,shownPeak))+'%';
  let status='',timer='';
  if(!s.participants.length){status='ОЖИДАНИЕ';p=null}
  else if(s.phase==='prep'){status='ПРИГОТОВЬТЕСЬ';timer=Math.max(1,Math.ceil(s.remaining))}
  else if(s.phase==='play'){status='КРИЧИ!';timer=Math.ceil(s.remaining)+' СЕК.'}
- else if(s.phase==='timeup'){status='ВРЕМЯ!';db=Math.max(-60,Math.min(0,Number(p.score ?? -60)));live=pct(db)}
+ else if(s.phase==='timeup'){status='ВРЕМЯ!';live=Math.max(0,Math.min(100,Number(p.score)||0));db=toDb(live)}
  else if(s.phase==='finished'){status='КОНКУРС ЗАВЕРШЁН';p=null}
  else status='ПРИГОТОВЬТЕСЬ';
  let c=dbColor(db), dbText=(db<=-60?'-60':db.toFixed(1));
  info.innerHTML=`<div class="name">${p?p.name:''}</div><div class="status">${status}</div><div class="db" style="color:${c}">${dbText}<span class="unit">dB</span></div><div class="timer">${timer}</div><div class="hint">Чем громче звук, тем выше показатель</div>`;
- results.innerHTML=s.participants.filter(x=>x.done).map(x=>`<div class="res"><span>${x.name}</span><b>${Number(x.score).toFixed(1)} dB</b></div>`).join('');
+ results.innerHTML=s.participants.filter(x=>x.done).map(x=>`<div class="res"><span>${x.name}</span><b>${toDb(Number(x.score)||0).toFixed(1)} dB</b></div>`).join('');
 }
 async function poll(){try{draw(await fetch('/api/state?_='+Date.now(),{cache:'no-store',headers:{'Cache-Control':'no-cache'}}).then(r=>r.json()))}catch(e){}setTimeout(poll,100)}poll()
 </script></body></html>"""
@@ -234,20 +207,20 @@ def api_init():
     try:n=max(1,min(10,int(d.get("count",4))))
     except:n=4
     with lock:
-        game.update(participants=[{"name":f"УЧАСТНИК {i+1}","score":None,"done":False} for i in range(n)],current=0,phase="ready",started=None,peak=-60.0,live=-60.0)
+        game.update(participants=[{"name":f"УЧАСТНИК {i+1}","score":None,"done":False} for i in range(n)],current=0,phase="ready",started=None,peak=0.0,live=0.0)
         return jsonify(game_data())
 
 @app.post("/api/start")
 def api_start():
     with lock:
-        if game["phase"]=="ready":game.update(phase="prep",started=time.time(),peak=-60.0,live=-60.0)
+        if game["phase"]=="ready":game.update(phase="prep",started=time.time(),peak=0.0,live=0.0)
         return jsonify(game_data())
 
 @app.post("/api/level")
 def api_level():
     d=request.get_json(silent=True) or {}
-    try:v=max(-60.0,min(0.0,float(d.get("db",-60))))
-    except:v=-60.0
+    try:v=max(0.0,min(100.0,float(d.get("level",0))))
+    except:v=0.0
     with lock:
         update_game();game["live"]=v
         if game["phase"]=="play":game["peak"]=max(game["peak"],v)
@@ -257,14 +230,14 @@ def api_level():
 def api_next():
     with lock:
         if game["phase"]=="timeup":
-            if game["current"]+1<len(game["participants"]):game.update(current=game["current"]+1,phase="ready",started=None,peak=-60.0,live=-60.0)
+            if game["current"]+1<len(game["participants"]):game.update(current=game["current"]+1,phase="ready",started=None,peak=0.0,live=0.0)
             else:game.update(current=len(game["participants"]),phase="finished",started=None,peak=0,live=0)
         return jsonify(game_data())
 
 @app.post("/api/reset")
 def api_reset():
     with lock:
-        game.update(participants=[],current=-1,phase="idle",started=None,peak=-60.0,live=-60.0)
+        game.update(participants=[],current=-1,phase="idle",started=None,peak=0.0,live=0.0)
         return jsonify(game_data())
 
 @app.get("/")
