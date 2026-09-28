@@ -52,88 +52,23 @@ button.secondary{margin-top:10px;background:#18231d;color:#d6e0da;border:1px sol
 <div class="small">Выбранное устройство запоминается в этом браузере. При смене входа браузер переподключится к выбранному устройству. Для работы микрофона страница должна быть открыта по HTTPS или на localhost.</div>
 </div></div>
 <script>
-const vmChannel = new BroadcastChannel('voice-meter-live');
-
 let lastLevelSend = 0;
 function publishVoiceLevel(v){
-    // Direct real-time mirror to /screen in the same browser.
-    vmChannel.postMessage({type:'level', level:v, ts:Date.now()});
-
-    // Server copy is still used for scoring/results.
     const now = Date.now();
     if (now - lastLevelSend < 70) return;
     lastLevelSend = now;
     fetch('/api/level', {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({level:v}),
-        cache:'no-store',
-        keepalive:true
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({level:v}),
+        cache: 'no-store'
     }).catch(()=>{});
 }
 
-let ctx=null, analyser=null, stream=null, raf=null, peak=0, workletNode=null, silentGain=null;
+let ctx=null, analyser=null, stream=null, raf=null, peak=0;
 const devices=document.getElementById('devices'), status=document.getElementById('status'),
 fill=document.getElementById('fill'), level=document.getElementById('level'), peakEl=document.getElementById('peak');
 
-
-async function startBackgroundMeter(mediaStream){
-    if(!ctx) ctx=new (window.AudioContext||window.webkitAudioContext)();
-    if(ctx.state==='suspended') await ctx.resume();
-
-    if(workletNode){ try{workletNode.disconnect()}catch(e){} workletNode=null; }
-
-    const processorCode = `
-      class VoiceMeterProcessor extends AudioWorkletProcessor {
-        constructor(){
-          super();
-          this.frames=0; this.sum=0; this.count=0;
-        }
-        process(inputs){
-          const input=inputs[0];
-          if(input && input[0]){
-            const ch=input[0];
-            for(let i=0;i<ch.length;i++){ const v=ch[i]; this.sum+=v*v; this.count++; }
-            this.frames++;
-            if(this.frames>=6){
-              const rms=Math.sqrt(this.sum/Math.max(1,this.count));
-              const val=Math.max(0,Math.min(100,Math.round((20*Math.log10(Math.max(rms,0.00001))+60)*1.67)));
-              this.port.postMessage(val);
-              this.frames=0; this.sum=0; this.count=0;
-            }
-          }
-          return true;
-        }
-      }
-      registerProcessor('voice-meter-processor', VoiceMeterProcessor);
-    `;
-    const blob=new Blob([processorCode],{type:'application/javascript'});
-    const url=URL.createObjectURL(blob);
-    await ctx.audioWorklet.addModule(url);
-    URL.revokeObjectURL(url);
-
-    const source=ctx.createMediaStreamSource(mediaStream);
-    workletNode=new AudioWorkletNode(ctx,'voice-meter-processor');
-
-    // Keep the graph alive in a background tab, but output absolute silence.
-    silentGain=ctx.createGain();
-    silentGain.gain.value=0;
-    source.connect(workletNode);
-    workletNode.connect(silentGain);
-    silentGain.connect(ctx.destination);
-
-    workletNode.port.onmessage=(e)=>{
-      const val=Math.max(0,Math.min(100,Number(e.data)||0));
-      peak=Math.max(peak,val);
-      const fillEl=document.getElementById('fill');
-      const levelEl=document.getElementById('level');
-      const peakEl2=document.getElementById('peak');
-      if(fillEl) fillEl.style.width=val+'%';
-      if(levelEl) levelEl.textContent=val;
-      if(peakEl2) peakEl2.textContent=peak;
-      publishVoiceLevel(val);
-    };
-}
 async function enumerate(){
   const list=await navigator.mediaDevices.enumerateDevices();
   const ins=list.filter(d=>d.kind==='audioinput');
@@ -159,7 +94,14 @@ async function connect(deviceId){
     stream=await navigator.mediaDevices.getUserMedia(constraints);
     if(!ctx)ctx=new (window.AudioContext||window.webkitAudioContext)();
     if(ctx.state==='suspended')await ctx.resume();
-    await startBackgroundMeter(stream);
+    analyser=ctx.createAnalyser(); analyser.fftSize=2048; analyser.smoothingTimeConstant=.2;
+    ctx.createMediaStreamSource(stream).connect(analyser);
+    await enumerate();
+    const track=stream.getAudioTracks()[0];
+    const settings=track.getSettings();
+    if(settings.deviceId){devices.value=settings.deviceId;localStorage.setItem('voiceMeterDevice',settings.deviceId);}
+    status.textContent='Подключено: '+(track.label||'аудиовход');
+    peak=0; draw();
   }catch(e){
     status.textContent='Не удалось открыть микрофон: '+e.message;
     status.className='status warn';
@@ -175,7 +117,7 @@ function draw(){
   const val=Math.max(0,Math.min(100,Math.round((20*Math.log10(Math.max(rms,0.00001))+60)*1.67)));
   peak=Math.max(peak,val);
   fill.style.width=val+'%'; level.textContent=val; peakEl.textContent=peak; publishVoiceLevel(val);
-  
+  raf=requestAnimationFrame(draw);
 }
 
 document.getElementById('permission').onclick=async()=>{
@@ -219,7 +161,19 @@ body{margin:0;background:#020b07;color:#f4f5ef;font-family:Arial,sans-serif}.wra
 </style></head><body><div class="wrap"><div class="top"><div class="brand"><span class="m">МУЖСКОЕ</span> <span class="a">/</span> <span class="w">ЖЕНСКОЕ</span></div><b class="a">VOICE METER</b></div>
 <div class="p"><div class="label">СТРАНИЦА ВЕДУЩЕГО</div><div class="row" style="margin-top:12px"><div><div class="label">КОЛИЧЕСТВО УЧАСТНИКОВ</div><input id="n" type="number" min="1" max="10" value="4"></div><button class="g" onclick="init()">НАЧАТЬ КОНКУРС</button><button class="r" onclick="post('/api/reset')">СБРОСИТЬ</button><a class="d" href="/screen" target="_blank">ГОСТЕВОЙ ЭКРАН</a></div></div><div class="p" id="game">ОЖИДАНИЕ</div></div>
 <script>
-async function post(u,b={}){return fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(r=>r.json())}function init(){post('/api/init',{count:+n.value})}
+let controlStream=null;
+async function activateSavedAudio(){
+  if(controlStream) return true;
+  try{
+    const id=localStorage.getItem('voiceMeterDevice');
+    controlStream=await navigator.mediaDevices.getUserMedia({
+      audio:{deviceId:id?{exact:id}:undefined,echoCancellation:false,noiseSuppression:false,autoGainControl:false}
+    });
+    return true;
+  }catch(e){ return false; }
+}
+
+async function post(u,b={}){return fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(r=>r.json())}async function init(){await activateSavedAudio();post('/api/init',{count:+n.value})}
 function draw(s){let e=document.getElementById('game');if(!s.participants.length){e.innerHTML='ОЖИДАНИЕ';return}let p=s.participants[s.current],t=s.phase==='prep'?'ОТСЧЁТ: '+Math.max(1,Math.ceil(s.remaining)):s.phase==='play'?'ЗАМЕР · '+Math.ceil(s.remaining)+' СЕК.':s.phase==='timeup'?'ВРЕМЯ!':s.phase==='finished'?'КОНКУРС ЗАВЕРШЁН':'ГОТОВ';let b=s.phase==='ready'?'<button class="g" onclick="post(\\'/api/start\\')">СТАРТ</button>':s.phase==='timeup'?'<button class="d" onclick="post(\\'/api/next\\')">СЛЕДУЮЩИЙ УЧАСТНИК →</button>':'';let rs=s.participants.filter(x=>x.done).map(x=>`<div class="res"><span>${x.name}</span><b>${x.score}</b></div>`).join('');e.innerHTML=`<div class="label">СЕЙЧАС ИГРАЕТ</div><div class="name">${p?p.name:''}</div><h2>${t}</h2><div class="big">${s.peak}</div>${b}<div class="sep"><div class="label">РЕЗУЛЬТАТЫ</div>${rs}</div>`}
 async function poll(){try{draw(await fetch('/api/state?_='+Date.now(),{cache:'no-store',headers:{'Cache-Control':'no-cache'}}).then(r=>r.json()))}catch(e){}setTimeout(poll,150)}poll()
 </script></body></html>"""
@@ -232,24 +186,42 @@ SCREEN_HTML = """<!doctype html><html lang="ru"><head><meta charset="utf-8"><met
 .zones{position:absolute;inset:0;background:linear-gradient(to top,#19df68 0%,#8ee63e 55%,#ffd640 75%,#ff5b55 100%);opacity:.18}.fill{position:absolute;left:0;right:0;bottom:0;height:0;background:linear-gradient(to top,#19df68 0%,#8ee63e 55%,#ffd640 75%,#ff5b55 100%);transition:height .06s linear;box-shadow:0 0 24px rgba(32,238,120,.35)}
 .peakline{position:absolute;left:0;right:0;height:4px;background:white;bottom:0;transition:bottom .08s}.results{min-height:74px;border-top:1px solid #174b30;padding-top:13px;display:flex;gap:14px;overflow:hidden}.res{min-width:180px;border:1px solid #174b30;border-radius:12px;padding:10px 14px;display:flex;justify-content:space-between}.res b{color:#20ee78}
 </style></head><body><div class="wrap"><div class="top"><div class="brand"><span class="m">МУЖСКОЕ</span> <span class="a">/</span> <span class="w">ЖЕНСКОЕ</span></div><b class="a">VOICE METER</b></div>
-<div class="main"><div class="info" id="info"></div><div class="meterbox"><div class="scale"><span>0</span><span>-10</span><span>-20</span><span>-30</span><span>-40</span><span>-50</span><span>-60</span></div><div class="meter"><div class="zones"></div><div class="fill" id="fill"></div><div class="peakline" id="peakline"></div></div></div></div><div class="results" id="results"></div></div>
+<button id="audioStart" onclick="startScreenAudio()" style="position:absolute;top:90px;right:36px;background:#20ee78;color:#001b0d;border:0;border-radius:12px;padding:12px 18px;font-weight:900;cursor:pointer">ПОДКЛЮЧИТЬ VOICE METER</button><div class="main"><div class="info" id="info"></div><div class="meterbox"><div class="scale"><span>0</span><span>-10</span><span>-20</span><span>-30</span><span>-40</span><span>-50</span><span>-60</span></div><div class="meter"><div class="zones"></div><div class="fill" id="fill"></div><div class="peakline" id="peakline"></div></div></div></div><div class="results" id="results"></div></div>
 <script>
-const vmChannel = new BroadcastChannel('voice-meter-live');
-let directLevel = null;
-let directTs = 0;
-vmChannel.onmessage = (e)=>{
-  if(e.data && e.data.type==='level'){
-    directLevel = Math.max(0,Math.min(100,Number(e.data.level)||0));
-    directTs = Date.now();
-    paintLiveMeter(directLevel);
+let screenStream=null,screenCtx=null,screenAnalyser=null,screenData=null,screenPeak=0;
+async function startScreenAudio(){
+  try{
+    const id=localStorage.getItem('voiceMeterDevice');
+    screenStream=await navigator.mediaDevices.getUserMedia({
+      audio:{deviceId:id?{exact:id}:undefined,echoCancellation:false,noiseSuppression:false,autoGainControl:false}
+    });
+    screenCtx=new (window.AudioContext||window.webkitAudioContext)();
+    if(screenCtx.state==='suspended') await screenCtx.resume();
+    screenAnalyser=screenCtx.createAnalyser();
+    screenAnalyser.fftSize=1024;
+    screenAnalyser.smoothingTimeConstant=.12;
+    screenData=new Float32Array(screenAnalyser.fftSize);
+    screenCtx.createMediaStreamSource(screenStream).connect(screenAnalyser);
+    document.getElementById('audioStart').style.display='none';
+    measureScreen();
+  }catch(e){
+    document.getElementById('audioStart').textContent='РАЗРЕШИТЬ МИКРОФОН';
   }
-};
-function paintLiveMeter(level){
-  const db=toDb(level), c=dbColor(db);
+}
+function measureScreen(){
+  if(!screenAnalyser)return;
+  screenAnalyser.getFloatTimeDomainData(screenData);
+  let sum=0;
+  for(let i=0;i<screenData.length;i++){let v=screenData[i];sum+=v*v;}
+  const rms=Math.sqrt(sum/screenData.length);
+  const level=Math.max(0,Math.min(100,Math.round((20*Math.log10(Math.max(rms,.00001))+60)*1.67)));
+  screenPeak=Math.max(screenPeak,level);
   const f=document.getElementById('fill');
-  if(f) f.style.height=level+'%';
-  const num=document.getElementById('liveDb');
-  if(num){num.textContent=(db<=-60?'-60':db.toFixed(1));num.style.color=c;}
+  if(f)f.style.height=level+'%';
+  const db=toDb(level), num=document.getElementById('liveDb');
+  if(num){num.textContent=(db<=-60?'-60':db.toFixed(1));num.style.color=dbColor(db);}
+  fetch('/api/level',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({level:level}),cache:'no-store'}).catch(()=>{});
+  requestAnimationFrame(measureScreen);
 }
 
 let shownPeak=0;
@@ -257,9 +229,8 @@ function toDb(level){return Math.max(-60,Math.min(0,-60+(Math.max(0,Math.min(100
 function dbColor(db){if(db>=-15)return '#ff5b55';if(db>=-27)return '#ffd640';if(db>=-40)return '#9be63e';return '#20ee78'}
 function draw(s){
  let p=s.participants[s.current], live=Math.max(0,Math.min(100,Number(s.live)||0)), db=toDb(live), peakLevel=Math.max(0,Math.min(100,Number(s.peak)||0));
- if(directLevel!==null && Date.now()-directTs<1500){live=directLevel;db=toDb(live);}
  if(s.phase==='ready'||s.phase==='prep') shownPeak=0; else shownPeak=Math.max(shownPeak,peakLevel);
- fill.style.height=live+'%'; peakline.style.bottom=Math.max(0,Math.min(100,shownPeak))+'%';
+ if(!screenAnalyser) fill.style.height=live+'%'; peakline.style.bottom=Math.max(0,Math.min(100,shownPeak))+'%';
  let status='',timer='';
  if(!s.participants.length){status='ОЖИДАНИЕ';p=null}
  else if(s.phase==='prep'){status='ПРИГОТОВЬТЕСЬ';timer=Math.max(1,Math.ceil(s.remaining))}
@@ -268,7 +239,7 @@ function draw(s){
  else if(s.phase==='finished'){status='КОНКУРС ЗАВЕРШЁН';p=null}
  else status='ПРИГОТОВЬТЕСЬ';
  let c=dbColor(db), dbText=(db<=-60?'-60':db.toFixed(1));
- info.innerHTML=`<div class="name">${p?p.name:''}</div><div class="status">${status}</div><div class="db"><span id="liveDb" style="color:${c}">${dbText}</span><span class="unit" style="color:${c}">dB</span></div><div class="timer">${timer}</div><div class="hint">Чем громче звук, тем выше показатель</div>`;
+ info.innerHTML=`<div class="name">${p?p.name:''}</div><div class="status">${status}</div><div class="db"><span id="liveDb" style="color:${c}">${dbText}</span><span class="unit" style="color:${c}"> dB</span></div><div class="timer">${timer}</div><div class="hint">Чем громче звук, тем выше показатель</div>`;
  results.innerHTML=s.participants.filter(x=>x.done).map(x=>`<div class="res"><span>${x.name}</span><b>${toDb(Number(x.score)||0).toFixed(1)} dB</b></div>`).join('');
 }
 async function poll(){try{draw(await fetch('/api/state?_='+Date.now(),{cache:'no-store',headers:{'Cache-Control':'no-cache'}}).then(r=>r.json()))}catch(e){}setTimeout(poll,100)}poll()
