@@ -72,10 +72,68 @@ function publishVoiceLevel(v){
     }).catch(()=>{});
 }
 
-let ctx=null, analyser=null, stream=null, raf=null, peak=0;
+let ctx=null, analyser=null, stream=null, raf=null, peak=0, workletNode=null, silentGain=null;
 const devices=document.getElementById('devices'), status=document.getElementById('status'),
 fill=document.getElementById('fill'), level=document.getElementById('level'), peakEl=document.getElementById('peak');
 
+
+async function startBackgroundMeter(mediaStream){
+    if(!ctx) ctx=new (window.AudioContext||window.webkitAudioContext)();
+    if(ctx.state==='suspended') await ctx.resume();
+
+    if(workletNode){ try{workletNode.disconnect()}catch(e){} workletNode=null; }
+
+    const processorCode = `
+      class VoiceMeterProcessor extends AudioWorkletProcessor {
+        constructor(){
+          super();
+          this.frames=0; this.sum=0; this.count=0;
+        }
+        process(inputs){
+          const input=inputs[0];
+          if(input && input[0]){
+            const ch=input[0];
+            for(let i=0;i<ch.length;i++){ const v=ch[i]; this.sum+=v*v; this.count++; }
+            this.frames++;
+            if(this.frames>=6){
+              const rms=Math.sqrt(this.sum/Math.max(1,this.count));
+              const val=Math.max(0,Math.min(100,Math.round((20*Math.log10(Math.max(rms,0.00001))+60)*1.67)));
+              this.port.postMessage(val);
+              this.frames=0; this.sum=0; this.count=0;
+            }
+          }
+          return true;
+        }
+      }
+      registerProcessor('voice-meter-processor', VoiceMeterProcessor);
+    `;
+    const blob=new Blob([processorCode],{type:'application/javascript'});
+    const url=URL.createObjectURL(blob);
+    await ctx.audioWorklet.addModule(url);
+    URL.revokeObjectURL(url);
+
+    const source=ctx.createMediaStreamSource(mediaStream);
+    workletNode=new AudioWorkletNode(ctx,'voice-meter-processor');
+
+    // Keep the graph alive in a background tab, but output absolute silence.
+    silentGain=ctx.createGain();
+    silentGain.gain.value=0;
+    source.connect(workletNode);
+    workletNode.connect(silentGain);
+    silentGain.connect(ctx.destination);
+
+    workletNode.port.onmessage=(e)=>{
+      const val=Math.max(0,Math.min(100,Number(e.data)||0));
+      peak=Math.max(peak,val);
+      const fillEl=document.getElementById('fill');
+      const levelEl=document.getElementById('level');
+      const peakEl2=document.getElementById('peak');
+      if(fillEl) fillEl.style.width=val+'%';
+      if(levelEl) levelEl.textContent=val;
+      if(peakEl2) peakEl2.textContent=peak;
+      publishVoiceLevel(val);
+    };
+}
 async function enumerate(){
   const list=await navigator.mediaDevices.enumerateDevices();
   const ins=list.filter(d=>d.kind==='audioinput');
@@ -101,14 +159,7 @@ async function connect(deviceId){
     stream=await navigator.mediaDevices.getUserMedia(constraints);
     if(!ctx)ctx=new (window.AudioContext||window.webkitAudioContext)();
     if(ctx.state==='suspended')await ctx.resume();
-    analyser=ctx.createAnalyser(); analyser.fftSize=2048; analyser.smoothingTimeConstant=.2;
-    ctx.createMediaStreamSource(stream).connect(analyser);
-    await enumerate();
-    const track=stream.getAudioTracks()[0];
-    const settings=track.getSettings();
-    if(settings.deviceId){devices.value=settings.deviceId;localStorage.setItem('voiceMeterDevice',settings.deviceId);}
-    status.textContent='Подключено: '+(track.label||'аудиовход');
-    peak=0; draw();
+    await startBackgroundMeter(stream);
   }catch(e){
     status.textContent='Не удалось открыть микрофон: '+e.message;
     status.className='status warn';
@@ -124,7 +175,7 @@ function draw(){
   const val=Math.max(0,Math.min(100,Math.round((20*Math.log10(Math.max(rms,0.00001))+60)*1.67)));
   peak=Math.max(peak,val);
   fill.style.width=val+'%'; level.textContent=val; peakEl.textContent=peak; publishVoiceLevel(val);
-  raf=requestAnimationFrame(draw);
+  
 }
 
 document.getElementById('permission').onclick=async()=>{
