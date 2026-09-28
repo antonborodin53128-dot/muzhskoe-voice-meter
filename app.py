@@ -165,6 +165,11 @@ body{margin:0;background:#020b07;color:#f4f5ef;font-family:Arial,sans-serif}.wra
 </style></head><body><div class="wrap"><div class="top"><div class="brand"><span class="m">МУЖСКОЕ</span> <span class="a">/</span> <span class="w">ЖЕНСКОЕ</span></div><b class="a">VOICE METER</b></div>
 <div class="p"><div class="label">СТРАНИЦА ВЕДУЩЕГО</div><div class="row" style="margin-top:12px"><div><div class="label">КОЛИЧЕСТВО УЧАСТНИКОВ</div><input id="n" type="number" min="1" max="10" value="4"></div><button class="g" onclick="init()">НАЧАТЬ КОНКУРС</button><button class="r" onclick="post('/api/reset')">СБРОСИТЬ</button><a class="d" href="/screen" target="_blank">ГОСТЕВОЙ ЭКРАН</a></div></div><div class="p" id="game">ОЖИДАНИЕ</div></div>
 <script>
+function toDb(level){
+  return Math.max(-60,Math.min(0,-60+(Math.max(0,Math.min(100,Number(level)||0))/100)*60));
+}
+function fmtDb(level){ return toDb(level).toFixed(1)+' dB'; }
+
 let controlStream=null;
 async function activateSavedAudio(){
   if(controlStream) return true;
@@ -178,7 +183,7 @@ async function activateSavedAudio(){
 }
 
 async function post(u,b={}){return fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(r=>r.json())}async function init(){await activateSavedAudio();post('/api/init',{count:+n.value})}
-function draw(s){let e=document.getElementById('game');if(!s.participants.length){e.innerHTML='ОЖИДАНИЕ';return}let p=s.participants[s.current],t=s.phase==='prep'?'ОТСЧЁТ: '+Math.max(1,Math.ceil(s.remaining)):s.phase==='play'?'ЗАМЕР · '+Math.ceil(s.remaining)+' СЕК.':s.phase==='timeup'?'ВРЕМЯ!':s.phase==='finished'?'КОНКУРС ЗАВЕРШЁН':'ГОТОВ';let b=s.phase==='ready'?'<button class="g" onclick="post(\\'/api/start\\')">СТАРТ</button>':s.phase==='timeup'?'<div class="retryActions"><button class="nextBtn" onclick="post(\\'/api/next\\')">СЛЕДУЮЩИЙ УЧАСТНИК →</button><button class="retryBtn" onclick="post(\\'/api/retry\\')">НАЧАТЬ ЗАНОВО</button></div>':'';let rs=s.participants.filter(x=>x.done).map(x=>`<div class="res"><span>${x.name}</span><b>${x.score}</b></div>`).join('');e.innerHTML=`<div class="label">СЕЙЧАС ИГРАЕТ</div><div class="name">${p?p.name:''}</div><h2>${t}</h2><div class="big">${s.peak}</div>${b}<div class="sep"><div class="label">РЕЗУЛЬТАТЫ</div>${rs}</div>`}
+function draw(s){let e=document.getElementById('game');if(!s.participants.length){e.innerHTML='ОЖИДАНИЕ';return}let p=s.participants[s.current],t=s.phase==='prep'?'ОТСЧЁТ: '+Math.max(1,Math.ceil(s.remaining)):s.phase==='play'?'ЗАМЕР · '+Math.ceil(s.remaining)+' СЕК.':s.phase==='timeup'?'ВРЕМЯ!':s.phase==='finished'?'КОНКУРС ЗАВЕРШЁН':'ГОТОВ';let b=s.phase==='ready'?'<button class="g" onclick="post(\\'/api/start\\')">СТАРТ</button>':s.phase==='timeup'?'<div class="retryActions"><button class="nextBtn" onclick="post(\\'/api/next\\')">СЛЕДУЮЩИЙ УЧАСТНИК →</button><button class="retryBtn" onclick="post(\\'/api/retry\\')">НАЧАТЬ ЗАНОВО</button></div>':'';let rs=s.participants.filter(x=>x.done).map(x=>`<div class="res"><span>${x.name}</span><b>${fmtDb(x.score)}</b></div>`).join('');e.innerHTML=`<div class="label">СЕЙЧАС ИГРАЕТ</div><div class="name">${p?p.name:''}</div><h2>${t}</h2><div class="big">${s.peak}</div>${b}<div class="sep"><div class="label">РЕЗУЛЬТАТЫ</div>${rs}</div>`}
 async function poll(){try{draw(await fetch('/api/state?_='+Date.now(),{cache:'no-store',headers:{'Cache-Control':'no-cache'}}).then(r=>r.json()))}catch(e){}setTimeout(poll,150)}poll()
 </script></body></html>"""
 
