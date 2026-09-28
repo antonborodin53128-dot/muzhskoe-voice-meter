@@ -167,10 +167,33 @@ async function poll(){try{draw(await fetch('/api/state?_='+Date.now(),{cache:'no
 </script></body></html>"""
 
 SCREEN_HTML = """<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Voice Meter</title><style>
-body{margin:0;background:#020b07;color:#f4f5ef;font-family:Arial,sans-serif}.wrap{max-width:1200px;margin:auto;padding:25px}.top{display:flex;justify-content:space-between;align-items:center}.brand{font-size:25px;font-weight:900}.m{border:2px solid #20ee78;padding:7px 10px}.w{color:#747d78}.a{color:#20ee78}.stage{text-align:center;min-height:600px;display:flex;flex-direction:column;justify-content:center}.name{font-size:48px;font-weight:900}.peak{font-size:160px;color:#20ee78;font-weight:900}.count{font-size:190px;font-weight:900}.meter{width:150px;height:380px;margin:24px auto;background:#06110b;border:1px solid #205239;border-radius:22px;overflow:hidden;display:flex;align-items:flex-end}.fill{width:100%;height:0;background:linear-gradient(0deg,#19df68 0%,#9be83e 60%,#ffd63e 80%,#ff5656 100%);transition:height .06s linear}.results{border:1px solid #174b30;background:#081810;border-radius:20px;padding:18px}.res{display:flex;justify-content:space-between;border-bottom:1px solid #12301f;padding:10px}.res b{color:#20ee78}
-</style></head><body><div class="wrap"><div class="top"><div class="brand"><span class="m">МУЖСКОЕ</span> <span class="a">/</span> <span class="w">ЖЕНСКОЕ</span></div><b class="a">VOICE METER</b></div><div class="stage" id="stage"></div><div class="results" id="results"></div></div>
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 15% 50%,#062419 0,#07110d 38%,#030806 75%);color:#f4f5ef;font-family:Arial,sans-serif;overflow:hidden}
+.wrap{max-width:1250px;height:100vh;margin:auto;padding:24px 36px;display:flex;flex-direction:column}.top{display:flex;justify-content:space-between;align-items:center}.brand{font-size:25px;font-weight:900}.m{border:2px solid #20ee78;padding:7px 10px}.w{color:#747d78}.a{color:#20ee78}
+.main{flex:1;display:grid;grid-template-columns:1fr 330px;gap:55px;align-items:center}.info{text-align:center}.name{font-size:50px;font-weight:900;letter-spacing:1px}.status{font-size:28px;margin-top:12px}.db{font-size:150px;font-weight:900;line-height:1;margin:30px 0 8px;transition:color .08s}.unit{font-size:36px;margin-left:8px}.timer{font-size:42px;font-weight:900}.hint{color:#81988c;font-size:18px;margin-top:18px}
+.meterbox{display:flex;align-items:center;justify-content:center;gap:18px}.scale{height:590px;display:flex;flex-direction:column;justify-content:space-between;text-align:right;color:#a9b8b0;font-size:17px;font-weight:800}.meter{position:relative;width:125px;height:590px;border:2px solid #27513c;border-radius:26px;overflow:hidden;background:#06100b;box-shadow:0 0 40px rgba(32,238,120,.08)}
+.zones{position:absolute;inset:0;background:linear-gradient(to top,#19df68 0%,#8ee63e 55%,#ffd640 75%,#ff5b55 100%);opacity:.18}.fill{position:absolute;left:0;right:0;bottom:0;height:0;background:linear-gradient(to top,#19df68 0%,#8ee63e 55%,#ffd640 75%,#ff5b55 100%);transition:height .06s linear;box-shadow:0 0 24px rgba(32,238,120,.35)}
+.peakline{position:absolute;left:0;right:0;height:4px;background:white;bottom:0;transition:bottom .08s}.results{min-height:74px;border-top:1px solid #174b30;padding-top:13px;display:flex;gap:14px;overflow:hidden}.res{min-width:180px;border:1px solid #174b30;border-radius:12px;padding:10px 14px;display:flex;justify-content:space-between}.res b{color:#20ee78}
+</style></head><body><div class="wrap"><div class="top"><div class="brand"><span class="m">МУЖСКОЕ</span> <span class="a">/</span> <span class="w">ЖЕНСКОЕ</span></div><b class="a">VOICE METER</b></div>
+<div class="main"><div class="info" id="info"></div><div class="meterbox"><div class="scale"><span>0</span><span>-10</span><span>-20</span><span>-30</span><span>-40</span><span>-50</span><span>-60</span></div><div class="meter"><div class="zones"></div><div class="fill" id="fill"></div><div class="peakline" id="peakline"></div></div></div></div><div class="results" id="results"></div></div>
 <script>
-function draw(s){let p=s.participants[s.current],h='';if(!s.participants.length)h='<div class="name">ОЖИДАНИЕ</div>';else if(s.phase==='prep')h=`<div class="name">${p.name}</div><div class="count">${Math.max(1,Math.ceil(s.remaining))}</div>`;else if(s.phase==='play')h=`<div class="name">${p.name}</div><div class="peak">${s.peak}</div><div class="meter"><div class="fill" style="height:${s.live}%"></div></div><h2>${Math.ceil(s.remaining)} СЕК.</h2>`;else if(s.phase==='timeup')h=`<div class="name">${p.name}</div><h1>ВРЕМЯ!</h1><div class="peak">${p.score}</div>`;else if(s.phase==='finished')h='<div class="name">КОНКУРС ЗАВЕРШЁН</div>';else h=`<div class="name">${p.name}</div><h1>ПРИГОТОВЬТЕСЬ</h1>`;stage.innerHTML=h;results.innerHTML=s.participants.filter(x=>x.done).map(x=>`<div class="res"><span>${x.name}</span><b>${x.score}</b></div>`).join('')}
+let shownPeak=0;
+function toDb(level){if(level<=0)return -60;return Math.max(-60,Math.min(0,-60+(level/100)*60))}
+function dbColor(db){if(db>=-15)return '#ff5b55';if(db>=-27)return '#ffd640';if(db>=-40)return '#9be63e';return '#20ee78'}
+function draw(s){
+ let p=s.participants[s.current], live=Math.max(0,Math.min(100,Number(s.live)||0)), db=toDb(live), peakDb=toDb(Number(s.peak)||0);
+ if(s.phase==='ready'||s.phase==='prep') shownPeak=0; else shownPeak=Math.max(shownPeak,Number(s.peak)||0);
+ fill.style.height=live+'%'; peakline.style.bottom=Math.max(0,Math.min(100,shownPeak))+'%';
+ let status='',timer='';
+ if(!s.participants.length){status='ОЖИДАНИЕ';p=null}
+ else if(s.phase==='prep'){status='ПРИГОТОВЬТЕСЬ';timer=Math.max(1,Math.ceil(s.remaining))}
+ else if(s.phase==='play'){status='КРИЧИ!';timer=Math.ceil(s.remaining)+' СЕК.'}
+ else if(s.phase==='timeup'){status='ВРЕМЯ!';db=toDb(Number(p.score)||0);live=Number(p.score)||0}
+ else if(s.phase==='finished'){status='КОНКУРС ЗАВЕРШЁН';p=null}
+ else status='ПРИГОТОВЬТЕСЬ';
+ let c=dbColor(db), dbText=(db<=-60?'-60':db.toFixed(1));
+ info.innerHTML=`<div class="name">${p?p.name:''}</div><div class="status">${status}</div><div class="db" style="color:${c}">${dbText}<span class="unit">dB</span></div><div class="timer">${timer}</div><div class="hint">Чем громче звук, тем выше показатель</div>`;
+ results.innerHTML=s.participants.filter(x=>x.done).map(x=>`<div class="res"><span>${x.name}</span><b>${toDb(x.score).toFixed(1)} dB</b></div>`).join('');
+}
 async function poll(){try{draw(await fetch('/api/state?_='+Date.now(),{cache:'no-store',headers:{'Cache-Control':'no-cache'}}).then(r=>r.json()))}catch(e){}setTimeout(poll,100)}poll()
 </script></body></html>"""
 
