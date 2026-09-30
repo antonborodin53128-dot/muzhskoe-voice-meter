@@ -34,7 +34,7 @@ button.secondary{margin-top:10px;background:#18231d;color:#d6e0da;border:1px sol
 </style>
 </head>
 <body><div class="wrap">
-<div class="top"><div class="brand"><span class="m">МУЖСКОЕ</span> <span class="slash">/</span> <span class="w">ЖЕНСКОЕ</span></div><b class="accent">VOICE METER</b></div>
+<div class="top"><div class="brand"><span class="m">VOICE METER</span></div><b class="accent">VOICE METER</b></div>
 <div class="panel">
 <h1>ТЕСТ АУДИОВХОДА</h1>
 <div class="sub">Сначала проверяем, что браузер видит нужную звуковую карту и корректно измеряет уровень микрофона.</div>
@@ -129,7 +129,13 @@ navigator.mediaDevices?.addEventListener?.('devicechange',enumerate);
 if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
   status.textContent='Этот браузер не поддерживает доступ к микрофону.'; status.className='status warn';
 }else enumerate();
-</script></body></html>
+</script><div class="panel" style="margin-top:18px">
+<div class="label" style="margin-bottom:12px">СТРАНИЦЫ КОНКУРСА</div>
+<div style="display:flex;gap:10px;flex-wrap:wrap">
+<a href="/setup" style="text-decoration:none"><button type="button">SETUP</button></a>
+<a href="/control" target="_blank" rel="noopener" style="text-decoration:none"><button type="button">УПРАВЛЕНИЕ</button></a>
+<a href="/screen" target="_blank" rel="noopener" style="text-decoration:none"><button type="button">ГОСТЕВОЙ ЭКРАН</button></a>
+</div></div></body></html>
 """
 
 
