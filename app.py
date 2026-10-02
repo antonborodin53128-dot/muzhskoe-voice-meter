@@ -196,19 +196,7 @@ async function poll(){try{draw(await fetch('/api/state?_='+Date.now(),{cache:'no
 SCREEN_HTML = """<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Voice Meter</title><style>
 *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 15% 50%,#062419 0,#07110d 38%,#030806 75%);color:#f4f5ef;font-family:Arial,sans-serif;overflow:hidden}
 .wrap{max-width:1250px;height:100vh;margin:auto;padding:24px 36px;display:flex;flex-direction:column}.top{display:flex;justify-content:space-between;align-items:center}.brand{font-size:25px;font-weight:900}.m{border:2px solid #20ee78;padding:7px 10px}.w{color:#747d78}.a{color:#20ee78}
-.main{flex:1;display:grid;grid-template-columns:1fr 330px;gap:55px;align-items:center}.info{text-align:center}.name{font-size:50px;font-weight:900;letter-spacing:1px}.status{font-size:28px;margin-top:12px}.db{font-size:150px;font-weight:900;line-height:1;margin:30px 0 8px;transition:color .18s}
-.dbRoll{display:inline-flex;align-items:baseline;justify-content:center;vertical-align:bottom;font-variant-numeric:tabular-nums}
-.dbChar{position:relative;display:inline-block;width:.62em;height:1em;overflow:hidden;vertical-align:bottom}
-.dbChar.static{width:.42em;overflow:visible}
-.dbDigit{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;will-change:transform,opacity}
-.dbDigit.inUp{animation:digitInUp .30s cubic-bezier(.22,.72,.25,1) both}
-.dbDigit.outUp{animation:digitOutUp .30s cubic-bezier(.22,.72,.25,1) both}
-.dbDigit.inDown{animation:digitInDown .30s cubic-bezier(.22,.72,.25,1) both}
-.dbDigit.outDown{animation:digitOutDown .30s cubic-bezier(.22,.72,.25,1) both}
-@keyframes digitInUp{from{transform:translateY(100%);opacity:.2}to{transform:translateY(0);opacity:1}}
-@keyframes digitOutUp{from{transform:translateY(0);opacity:1}to{transform:translateY(-100%);opacity:.15}}
-@keyframes digitInDown{from{transform:translateY(-100%);opacity:.2}to{transform:translateY(0);opacity:1}}
-@keyframes digitOutDown{from{transform:translateY(0);opacity:1}to{transform:translateY(100%);opacity:.15}}.unit{font-size:36px;margin-left:8px}.timer{font-size:42px;font-weight:900}.hint{color:#81988c;font-size:18px;margin-top:18px}
+.main{flex:1;display:grid;grid-template-columns:1fr 330px;gap:55px;align-items:center}.info{text-align:center}.name{font-size:50px;font-weight:900;letter-spacing:1px}.status{font-size:28px;margin-top:12px}.db{font-size:150px;font-weight:900;line-height:1;margin:30px 0 8px;transition:color .08s}.unit{font-size:36px;margin-left:8px}.timer{font-size:42px;font-weight:900}.hint{color:#81988c;font-size:18px;margin-top:18px}
 .meterbox{display:flex;align-items:center;justify-content:center;gap:18px}.scale{height:590px;display:flex;flex-direction:column;justify-content:space-between;text-align:right;color:#a9b8b0;font-size:17px;font-weight:800}.meter{position:relative;width:125px;height:590px;border:2px solid #27513c;border-radius:26px;overflow:hidden;background:#06100b;box-shadow:0 0 40px rgba(32,238,120,.08)}
 .zones{position:absolute;inset:0;background:linear-gradient(to top,#19df68 0%,#8ee63e 55%,#ffd640 75%,#ff5b55 100%);opacity:.18}.fill{position:absolute;left:0;right:0;bottom:0;height:0;background:linear-gradient(to top,#19df68 0%,#8ee63e 55%,#ffd640 75%,#ff5b55 100%);transition:height .06s linear;box-shadow:0 0 24px rgba(32,238,120,.35)}
 .peakline{position:absolute;left:0;right:0;height:4px;background:white;bottom:0;transition:bottom .08s}.results{min-height:74px;border-top:1px solid #174b30;padding-top:13px;display:flex;gap:14px;overflow:hidden}.res{min-width:180px;border:1px solid #174b30;border-radius:12px;padding:10px 14px;display:flex;justify-content:space-between}.res b{color:#20ee78}
@@ -220,6 +208,23 @@ SCREEN_HTML = """<!doctype html><html lang="ru"><head><meta charset="utf-8"><met
 <button id="audioStart" onclick="startScreenAudio()" style="position:absolute;top:90px;right:36px;background:#20ee78;color:#001b0d;border:0;border-radius:12px;padding:12px 18px;font-weight:900;cursor:pointer">ПОДКЛЮЧИТЬ VOICE METER</button><div class="main"><div class="info" id="info"></div><div class="meterbox"><div class="scale"><span>0</span><span>-10</span><span>-20</span><span>-30</span><span>-40</span><span>-50</span><span>-60</span></div><div class="meter"><div class="zones"></div><div class="fill" id="fill"></div><div class="peakline" id="peakline"></div></div></div></div><div class="results" id="results"></div></div>
 <script>
 let screenStream=null,screenCtx=null,screenAnalyser=null,screenData=null,screenPeak=0;
+let lastDbDisplayAt=0,lastDbDisplayText=null;
+function updateDbDisplay(db){
+  const now=performance.now();
+  if(now-lastDbDisplayAt<250)return;
+  const num=document.getElementById('liveDb');
+  if(!num)return;
+  const text=db<=-60?'-60':db.toFixed(1);
+  if(text!==lastDbDisplayText){
+    num.textContent=text;
+    num.style.color=dbColor(db);
+    lastDbDisplayText=text;
+  }
+  const unit=num.parentElement&&num.parentElement.querySelector('.unit');
+  if(unit)unit.style.color=dbColor(db);
+  lastDbDisplayAt=now;
+}
+
 async function startScreenAudio(){
   try{
     const id=localStorage.getItem('voiceMeterDevice');
@@ -248,60 +253,16 @@ function measureScreen(){
   const level=Math.max(0,Math.min(100,Math.round((20*Math.log10(Math.max(rms,.00001))+60)*1.67)));
   screenPeak=Math.max(screenPeak,level);
   const f=document.getElementById('fill');
-  const db=toDb(level);
+  const db=toDb(level), num=document.getElementById('liveDb');
   if(window.currentGamePhase!=='timeup' && window.currentGamePhase!=='finished'){
     if(f)f.style.height=level+'%';
-    setRollingDb(db);
+    if(num)updateDbDisplay(db);
   }
   fetch('/api/level',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({level:level}),cache:'no-store'}).catch(()=>{});
   requestAnimationFrame(measureScreen);
 }
 
 let shownPeak=0;
-let shownDbText=null,lastDbRoll=0,shownDbValue=-60;
-function dbChars(text){return text.split('')}
-function buildDbRoll(text,color){
-  const box=document.getElementById('dbRoll'); if(!box)return;
-  box.innerHTML='';
-  dbChars(text).forEach((ch,i)=>{
-    const slot=document.createElement('span');
-    slot.className='dbChar'+(/[0-9]/.test(ch)?'':' static');
-    slot.dataset.char=ch;
-    const val=document.createElement('span');
-    val.className='dbDigit'; val.textContent=ch; val.style.color=color;
-    slot.appendChild(val); box.appendChild(slot);
-  });
-}
-function setRollingDb(db){
-  const now=performance.now();
-  if(now-lastDbRoll<260)return;
-  const value=Math.max(-60,Math.min(0,db));
-  const text=value<=-60?'-60.0':value.toFixed(1);
-  const color=dbColor(value),box=document.getElementById('dbRoll'),unit=document.getElementById('dbUnit');
-  if(!box)return;
-  if(shownDbText===null || box.children.length!==text.length){
-    buildDbRoll(text,color); shownDbText=text; shownDbValue=value; lastDbRoll=now;
-    if(unit)unit.style.color=color; return;
-  }
-  if(text===shownDbText){if(unit)unit.style.color=color;return}
-  const upward=value>shownDbValue;
-  [...box.children].forEach((slot,i)=>{
-    const ch=text[i],oldCh=shownDbText[i],old=slot.querySelector('.dbDigit');
-    if(ch===oldCh){if(old)old.style.color=color;return}
-    if(!/[0-9]/.test(ch) || !/[0-9]/.test(oldCh)){
-      slot.dataset.char=ch; slot.className='dbChar'+(/[0-9]/.test(ch)?'':' static');
-      if(old){old.textContent=ch;old.style.color=color} return;
-    }
-    const next=document.createElement('span');
-    next.className='dbDigit '+(upward?'inUp':'inDown');
-    next.textContent=ch;next.style.color=color;
-    if(old){old.className='dbDigit '+(upward?'outUp':'outDown');old.id=''}
-    slot.appendChild(next);slot.dataset.char=ch;
-    setTimeout(()=>{if(old&&old.parentNode)old.remove()},320);
-  });
-  shownDbText=text;shownDbValue=value;lastDbRoll=now;
-  if(unit)unit.style.color=color;
-}
 function toDb(level){return Math.max(-60,Math.min(0,-60+(Math.max(0,Math.min(100,level))/100)*60))}
 function dbColor(db){if(db>=-15)return '#ff5b55';if(db>=-27)return '#ffd640';if(db>=-40)return '#9be63e';return '#20ee78'}
 function draw(s){window.currentGamePhase=s.phase;
@@ -319,7 +280,7 @@ function draw(s){window.currentGamePhase=s.phase;
  if(s.phase==='timeup'){
    info.innerHTML=`<div class="name">${p?p.name:''}</div><div class="status">МАКСИМАЛЬНЫЙ РЕЗУЛЬТАТ</div><div class="finalResult" style="color:${c}">${dbText}<span class="unit"> dB</span></div>`;
  }else{
-   info.innerHTML=`<div class="name">${p?p.name:''}</div><div class="status">${status}</div><div class="db"><span class="dbRoll" id="dbRoll"></span><span class="unit" id="dbUnit" style="color:${c}"> dB</span></div><div class="timer">${timer}</div><div class="hint">Чем громче звук, тем выше показатель</div>`;
+   info.innerHTML=`<div class="name">${p?p.name:''}</div><div class="status">${status}</div><div class="db"><span id="liveDb" style="color:${c}">${dbText}</span><span class="unit" style="color:${c}"> dB</span></div><div class="timer">${timer}</div><div class="hint">Чем громче звук, тем выше показатель</div>`;
  }
  results.innerHTML=s.participants.filter(x=>x.done).map(x=>`<div class="res"><span>${x.name}</span><b>${toDb(Number(x.score)||0).toFixed(1)} dB</b></div>`).join('');
 }
