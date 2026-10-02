@@ -196,7 +196,13 @@ async function poll(){try{draw(await fetch('/api/state?_='+Date.now(),{cache:'no
 SCREEN_HTML = """<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Voice Meter</title><style>
 *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 15% 50%,#062419 0,#07110d 38%,#030806 75%);color:#f4f5ef;font-family:Arial,sans-serif;overflow:hidden}
 .wrap{max-width:1250px;height:100vh;margin:auto;padding:24px 36px;display:flex;flex-direction:column}.top{display:flex;justify-content:space-between;align-items:center}.brand{font-size:25px;font-weight:900}.m{border:2px solid #20ee78;padding:7px 10px}.w{color:#747d78}.a{color:#20ee78}
-.main{flex:1;display:grid;grid-template-columns:1fr 330px;gap:55px;align-items:center}.info{text-align:center}.name{font-size:50px;font-weight:900;letter-spacing:1px}.status{font-size:28px;margin-top:12px}.db{font-size:150px;font-weight:900;line-height:1;margin:30px 0 8px;transition:color .08s}.unit{font-size:36px;margin-left:8px}.timer{font-size:42px;font-weight:900}.hint{color:#81988c;font-size:18px;margin-top:18px}
+.main{flex:1;display:grid;grid-template-columns:1fr 330px;gap:55px;align-items:center}.info{text-align:center}.name{font-size:50px;font-weight:900;letter-spacing:1px}.status{font-size:28px;margin-top:12px}.db{font-size:150px;font-weight:900;line-height:1;margin:30px 0 8px;transition:color .18s}
+.dbRoll{position:relative;display:inline-block;height:1em;min-width:2.9em;overflow:hidden;vertical-align:bottom}
+.dbRollValue{position:absolute;left:0;right:0;top:0;text-align:right;will-change:transform,opacity}
+.dbRollValue.enter{animation:dbRollIn .34s cubic-bezier(.22,.72,.25,1) both}
+.dbRollValue.exit{animation:dbRollOut .34s cubic-bezier(.22,.72,.25,1) both}
+@keyframes dbRollIn{from{transform:translateY(105%);opacity:.25}to{transform:translateY(0);opacity:1}}
+@keyframes dbRollOut{from{transform:translateY(0);opacity:1}to{transform:translateY(-105%);opacity:.15}}.unit{font-size:36px;margin-left:8px}.timer{font-size:42px;font-weight:900}.hint{color:#81988c;font-size:18px;margin-top:18px}
 .meterbox{display:flex;align-items:center;justify-content:center;gap:18px}.scale{height:590px;display:flex;flex-direction:column;justify-content:space-between;text-align:right;color:#a9b8b0;font-size:17px;font-weight:800}.meter{position:relative;width:125px;height:590px;border:2px solid #27513c;border-radius:26px;overflow:hidden;background:#06100b;box-shadow:0 0 40px rgba(32,238,120,.08)}
 .zones{position:absolute;inset:0;background:linear-gradient(to top,#19df68 0%,#8ee63e 55%,#ffd640 75%,#ff5b55 100%);opacity:.18}.fill{position:absolute;left:0;right:0;bottom:0;height:0;background:linear-gradient(to top,#19df68 0%,#8ee63e 55%,#ffd640 75%,#ff5b55 100%);transition:height .06s linear;box-shadow:0 0 24px rgba(32,238,120,.35)}
 .peakline{position:absolute;left:0;right:0;height:4px;background:white;bottom:0;transition:bottom .08s}.results{min-height:74px;border-top:1px solid #174b30;padding-top:13px;display:flex;gap:14px;overflow:hidden}.res{min-width:180px;border:1px solid #174b30;border-radius:12px;padding:10px 14px;display:flex;justify-content:space-between}.res b{color:#20ee78}
@@ -239,13 +245,29 @@ function measureScreen(){
   const db=toDb(level), num=document.getElementById('liveDb');
   if(window.currentGamePhase!=='timeup' && window.currentGamePhase!=='finished'){
     if(f)f.style.height=level+'%';
-    if(num){num.textContent=(db<=-60?'-60':db.toFixed(1));num.style.color=dbColor(db);}
+    if(num)setRollingDb(db);
   }
   fetch('/api/level',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({level:level}),cache:'no-store'}).catch(()=>{});
   requestAnimationFrame(measureScreen);
 }
 
 let shownPeak=0;
+let shownDbText=null,lastDbRoll=0;
+function setRollingDb(db){
+  const now=performance.now();
+  if(now-lastDbRoll<260)return;
+  const text=db<=-60?'-60':db.toFixed(1);
+  if(text===shownDbText)return;
+  const box=document.getElementById('dbRoll'),old=document.getElementById('liveDb'),unit=document.getElementById('dbUnit');
+  if(!box||!old)return;
+  lastDbRoll=now;shownDbText=text;
+  const color=dbColor(db),next=document.createElement('span');
+  next.id='liveDb';next.className='dbRollValue enter';next.textContent=text;next.style.color=color;
+  old.id='';old.className='dbRollValue exit';
+  box.appendChild(next);if(unit)unit.style.color=color;
+  setTimeout(()=>{if(old.parentNode)old.remove()},360);
+}
+
 function toDb(level){return Math.max(-60,Math.min(0,-60+(Math.max(0,Math.min(100,level))/100)*60))}
 function dbColor(db){if(db>=-15)return '#ff5b55';if(db>=-27)return '#ffd640';if(db>=-40)return '#9be63e';return '#20ee78'}
 function draw(s){window.currentGamePhase=s.phase;
@@ -263,11 +285,11 @@ function draw(s){window.currentGamePhase=s.phase;
  if(s.phase==='timeup'){
    info.innerHTML=`<div class="name">${p?p.name:''}</div><div class="status">МАКСИМАЛЬНЫЙ РЕЗУЛЬТАТ</div><div class="finalResult" style="color:${c}">${dbText}<span class="unit"> dB</span></div>`;
  }else{
-   info.innerHTML=`<div class="name">${p?p.name:''}</div><div class="status">${status}</div><div class="db"><span id="liveDb" style="color:${c}">${dbText}</span><span class="unit" style="color:${c}"> dB</span></div><div class="timer">${timer}</div><div class="hint">Чем громче звук, тем выше показатель</div>`;
+   info.innerHTML=`<div class="name">${p?p.name:''}</div><div class="status">${status}</div><div class="db"><span class="dbRoll" id="dbRoll"><span id="liveDb" class="dbRollValue" style="color:${c}">${dbText}</span></span><span class="unit" id="dbUnit" style="color:${c}"> dB</span></div><div class="timer">${timer}</div><div class="hint">Чем громче звук, тем выше показатель</div>`;
  }
  results.innerHTML=s.participants.filter(x=>x.done).map(x=>`<div class="res"><span>${x.name}</span><b>${toDb(Number(x.score)||0).toFixed(1)} dB</b></div>`).join('');
 }
-async function poll(){try{draw(await fetch('/api/state?_='+Date.now(),{cache:'no-store',headers:{'Cache-Control':'no-cache'}}).then(r=>r.json()))}catch(e){}setTimeout(poll,100)}poll()
+async function poll(){try{draw(await fetch('/api/state?_='+Date.now(),{cache:'no-store',headers:{'Cache-Control':'no-cache'}}).then(r=>r.json()))}catch(e){}setTimeout(poll,100)}poll();if(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia){startScreenAudio();}
 </script></body></html>"""
 
 @app.get("/api/state")
